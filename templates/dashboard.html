@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0f1a;
+            color: #fff;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #0d1421;
+            border: 1px solid #1e2a3a;
+            border-radius: 16px;
+            padding: 32px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .header .subtitle {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .members-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #9ca3af;
+        }
+        
+        .members-badge svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .metric-card {
+            background: #0d1421;
+            border: 1px solid #1e2a3a;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .metric-label {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .metric-value {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+        }
+        
+        .metric-value .number {
+            font-size: 36px;
+            font-weight: 600;
+        }
+        
+        .metric-value .change {
+            color: #22c55e;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        
+        .metric-value .change::before {
+            content: "↗";
+        }
+        
+        .value-section {
+            background: #0d1421;
+            border: 1px solid #1e2a3a;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+        
+        .value-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .value-header h2 {
+            font-size: 18px;
+            font-weight: 500;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #9ca3af;
+        }
+        
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .legend-dot.ai {
+            background: #06b6d4;
+        }
+        
+        .legend-dot.human {
+            background: #22c55e;
+        }
+        
+        .value-row {
+            margin-bottom: 16px;
+        }
+        
+        .value-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .value-row-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .value-row-label {
+            font-size: 14px;
+            color: #e5e7eb;
+        }
+        
+        .warning-icon {
+            color: #9ca3af;
+            font-size: 16px;
+        }
+        
+        .bar-container {
+            display: flex;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #1e2a3a;
+        }
+        
+        .bar-ai {
+            background: #06b6d4;
+            height: 100%;
+        }
+        
+        .bar-human {
+            background: #22c55e;
+            height: 100%;
+        }
+        
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        
+        .action-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 2px solid;
+            background: transparent;
+        }
+        
+        .action-btn.ai-roi {
+            border-color: #06b6d4;
+            color: #06b6d4;
+            background: rgba(6, 182, 212, 0.1);
+        }
+        
+        .action-btn.human-first {
+            border-color: #a3a339;
+            color: #a3a339;
+            background: rgba(163, 163, 57, 0.1);
+        }
+        
+        .action-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <div>
+                <h1>Team Dashboard</h1>
+                <p class="subtitle">AI × Human metrics</p>
+            </div>
+            <div class="members-badge">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                {{ member_count }} members
+            </div>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">AI-Assisted Decisions</div>
+                <div class="metric-value">
+                    <span class="number">{{ metrics.ai_decisions.value }}</span>
+                    <span class="change">{{ metrics.ai_decisions.change }}</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Time Saved</div>
+                <div class="metric-value">
+                    <span class="number">{{ metrics.time_saved.value }}</span>
+                    <span class="change">{{ metrics.time_saved.change }}</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Quality Score</div>
+                <div class="metric-value">
+                    <span class="number">{{ metrics.quality_score.value }}</span>
+                    <span class="change">{{ metrics.quality_score.change }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="value-section">
+            <div class="value-header">
+                <h2>Where AI Creates Value</h2>
+                <div class="legend">
+                    <div class="legend-item">
+                        <span class="legend-dot ai"></span>
+                        AI
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot human"></span>
+                        Human
+                    </div>
+                </div>
+            </div>
+            
+            {% for area in value_areas %}
+            <div class="value-row">
+                <div class="value-row-header">
+                    <span class="value-row-label">{{ area.name }}</span>
+                    {% if area.warning %}
+                    <span class="warning-icon">⚠</span>
+                    {% endif %}
+                </div>
+                <div class="bar-container">
+                    <div class="bar-ai" style="width: {{ area.ai }}%"></div>
+                    <div class="bar-human" style="width: {{ area.human }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="action-buttons">
+            <button class="action-btn ai-roi" hx-get="/high-ai-roi" hx-swap="none">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                High AI ROI
+            </button>
+            <button class="action-btn human-first" hx-get="/human-first" hx-swap="none">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/>
+                </svg>
+                Human-First
+            </button>
+        </div>
+    </div>
+</body>
+</html>
