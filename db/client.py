@@ -151,21 +151,40 @@ class Neo4jClient:
             "ai_decisions": 0,
         }
 
-    def get_decisions_with_outcomes(self, limit: int = 50) -> list[dict[str, Any]]:
+    def get_decisions_by_type(self, per_type: int = 4) -> list[dict[str, Any]]:
         return self.query("""
-            MATCH (d:Decision)-[:CONTRIBUTED_TO*1..2]->(x)<-[:CAUSED_BY]-(o:Outcome)
-            WHERE (x:Task OR x:Event) AND d.name IS NOT NULL
+            MATCH (d:Decision)
+            WHERE d.name IS NOT NULL
             OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
             OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
-            WITH d, o, collect(DISTINCT p.name) as people, collect(DISTINCT a.name) as agents
-            RETURN d.name as decision, d.description as description,
-                   o.name as outcome,
-                   people, agents,
-                   CASE WHEN size(agents) > 0 THEN 'ai' 
-                        WHEN size(people) > 0 THEN 'human' 
-                        ELSE 'unknown' END as influence_type
-            LIMIT $limit
-        """, {"limit": limit})
+            OPTIONAL MATCH (d)-[:CONTRIBUTED_TO*1..2]->(x)<-[:CAUSED_BY]-(o:Outcome)
+            WHERE x IS NULL OR x:Task OR x:Event
+            WITH d, 
+                 collect(DISTINCT p.name) as people, 
+                 collect(DISTINCT a.name) as agents,
+                 collect(DISTINCT o.name)[0] as outcome,
+                 CASE WHEN size(collect(DISTINCT a)) > 0 AND size(collect(DISTINCT p)) > 0 THEN 'both'
+                      WHEN size(collect(DISTINCT a)) > 0 THEN 'ai' 
+                      WHEN size(collect(DISTINCT p)) > 0 THEN 'human' 
+                      ELSE 'unknown' END as influence_type
+            WITH d.name as decision, d.description as description, outcome,
+                 [x IN people WHERE x IS NOT NULL] as people,
+                 [x IN agents WHERE x IS NOT NULL] as agents,
+                 influence_type
+            ORDER BY CASE influence_type WHEN 'both' THEN 0 WHEN 'human' THEN 1 WHEN 'ai' THEN 2 ELSE 3 END, decision
+            WITH influence_type, collect({
+                decision: decision,
+                description: description,
+                outcome: outcome,
+                people: people,
+                agents: agents,
+                influence_type: influence_type
+            })[0..$per_type] as decisions
+            UNWIND decisions as d
+            RETURN d.decision as decision, d.description as description,
+                   d.outcome as outcome, d.people as people, d.agents as agents,
+                   d.influence_type as influence_type
+        """, {"per_type": per_type})
 
     def get_outcomes_for_summary(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.query("""

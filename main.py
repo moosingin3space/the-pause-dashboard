@@ -14,7 +14,7 @@ async def dashboard(request: Request):
     client = get_client()
     summary = client.get_dashboard_summary()
     contribution_split = client.get_contribution_split()
-    decisions = client.get_decisions_with_outcomes(limit=20)
+    decisions = client.get_decisions_by_type(per_type=2)
     people = client.get_people_with_stats()
     agents = client.get_agents_with_stats()
     
