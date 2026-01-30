@@ -79,7 +79,7 @@ class Neo4jClient:
             MATCH (a:Agent)
             OPTIONAL MATCH (a)-[:PARTICIPATED_IN]->(d:Decision)
             WITH a, count(d) as decision_count
-            RETURN a.name as name, a.type as type, decision_count
+            RETURN a.name as name, a.description as description, decision_count
             ORDER BY decision_count DESC
             LIMIT $limit
         """, {"limit": limit})
@@ -159,7 +159,7 @@ class Neo4jClient:
             OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
             WITH d, o, collect(DISTINCT p.name) as people, collect(DISTINCT a.name) as agents
             RETURN d.name as decision, d.description as description,
-                   o.name as outcome, o.type as outcome_type,
+                   o.name as outcome,
                    people, agents,
                    CASE WHEN size(agents) > 0 THEN 'ai' 
                         WHEN size(people) > 0 THEN 'human' 
@@ -169,8 +169,10 @@ class Neo4jClient:
 
     def get_outcomes_for_summary(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.query("""
-            MATCH (o:Outcome)<-[:CAUSED_BY]-(x)<-[:CONTRIBUTED_TO*1..2]-(d:Decision)
-            WHERE x:Task OR x:Event
+            MATCH (o:Outcome)
+            OPTIONAL MATCH (o)<-[:CAUSED_BY*1..3]-(x)
+            WHERE x:Task OR x:Event OR x:Decision
+            OPTIONAL MATCH (d:Decision)-[:CONTRIBUTED_TO*0..2]->(x)
             OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
             OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
             WITH o, collect(DISTINCT d.name) as decisions, 

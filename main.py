@@ -21,7 +21,8 @@ async def dashboard(request: Request):
     outcomes = client.get_outcomes_for_summary()
     try:
         outcome_summary = summarize_outcomes(outcomes)
-    except Exception:
+    except Exception as e:
+        print(f"LLM summary error: {e}")
         outcome_summary = None
     
     return templates.TemplateResponse(

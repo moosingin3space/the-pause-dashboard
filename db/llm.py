@@ -33,7 +33,7 @@ def summarize_outcomes(outcomes: list[dict]) -> str:
     client = get_openai_client()
 
     response = client.chat.completions.create(
-        model="openai/gpt-5-nano",
+        model="openai/gpt-4.1-nano",
         messages=[
             {
                 "role": "system",
@@ -47,4 +47,5 @@ def summarize_outcomes(outcomes: list[dict]) -> str:
         max_tokens=150,
     )
 
-    return response.choices[0].message.content or "Unable to generate summary."
+    content = response.choices[0].message.content if response.choices else None
+    return content or "Unable to generate summary."
