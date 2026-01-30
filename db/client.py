@@ -67,7 +67,7 @@ class Neo4jClient:
     def get_people_with_stats(self, limit: int = 50) -> list[dict[str, Any]]:
         return self.query("""
             MATCH (p:Person)
-            OPTIONAL MATCH (p)-[:CONTRIBUTED_TO]->(d:Decision)
+            OPTIONAL MATCH (p)-[:PARTICIPATED_IN]->(d:Decision)
             WITH p, count(d) as decision_count
             RETURN p.name as name, p.role as role, decision_count
             ORDER BY decision_count DESC
@@ -77,7 +77,7 @@ class Neo4jClient:
     def get_agents_with_stats(self, limit: int = 50) -> list[dict[str, Any]]:
         return self.query("""
             MATCH (a:Agent)
-            OPTIONAL MATCH (a)-[:CONTRIBUTED_TO]->(d:Decision)
+            OPTIONAL MATCH (a)-[:PARTICIPATED_IN]->(d:Decision)
             WITH a, count(d) as decision_count
             RETURN a.name as name, a.type as type, decision_count
             ORDER BY decision_count DESC
@@ -154,7 +154,7 @@ class Neo4jClient:
     def get_decisions_with_outcomes(self, limit: int = 50) -> list[dict[str, Any]]:
         return self.query("""
             MATCH (d:Decision)-[:CONTRIBUTED_TO*1..2]->(x)<-[:CAUSED_BY]-(o:Outcome)
-            WHERE x:Task OR x:Event
+            WHERE (x:Task OR x:Event) AND d.name IS NOT NULL
             OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
             OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
             WITH d, o, collect(DISTINCT p.name) as people, collect(DISTINCT a.name) as agents
@@ -164,6 +164,20 @@ class Neo4jClient:
                    CASE WHEN size(agents) > 0 THEN 'ai' 
                         WHEN size(people) > 0 THEN 'human' 
                         ELSE 'unknown' END as influence_type
+            LIMIT $limit
+        """, {"limit": limit})
+
+    def get_outcomes_for_summary(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self.query("""
+            MATCH (o:Outcome)<-[:CAUSED_BY]-(x)<-[:CONTRIBUTED_TO*1..2]-(d:Decision)
+            WHERE x:Task OR x:Event
+            OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
+            OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
+            WITH o, collect(DISTINCT d.name) as decisions, 
+                 collect(DISTINCT p.name) as people, 
+                 collect(DISTINCT a.name) as agents
+            RETURN o.name as outcome, o.description as description,
+                   decisions, people, agents
             LIMIT $limit
         """, {"limit": limit})
 
@@ -203,17 +217,17 @@ class Neo4jClient:
             outcomes[row["contributor_type"]] = row["count"]
             outcomes["total"] += row["count"]
         
-        def calc_rates(d):
-            total = d["total"] or 1
-            return {
-                **d,
-                "human_rate": (d["human"] + d["both"]) / total * 100,
-                "ai_rate": (d["ai"] + d["both"]) / total * 100,
-            }
-        
+        total = decisions["total"] or 1
         return {
-            "decisions": calc_rates(decisions),
-            "outcomes": calc_rates(outcomes),
+            "human_only": decisions["human"],
+            "ai_only": decisions["ai"],
+            "both": decisions["both"],
+            "none": decisions["none"],
+            "total": decisions["total"],
+            "human_only_rate": decisions["human"] / total * 100,
+            "ai_only_rate": decisions["ai"] / total * 100,
+            "both_rate": decisions["both"] / total * 100,
+            "none_rate": decisions["none"] / total * 100,
         }
 
     def get_dashboard_summary(self) -> dict[str, Any]:

@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import uvicorn
 
-from db import get_client
+from db import get_client, summarize_outcomes
 
 app = FastAPI(title="QoG Dashboard")
 templates = Jinja2Templates(directory="templates")
@@ -18,6 +18,12 @@ async def dashboard(request: Request):
     people = client.get_people_with_stats()
     agents = client.get_agents_with_stats()
     
+    outcomes = client.get_outcomes_for_summary()
+    try:
+        outcome_summary = summarize_outcomes(outcomes)
+    except Exception:
+        outcome_summary = None
+    
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -27,6 +33,7 @@ async def dashboard(request: Request):
             "decisions": decisions,
             "people": people,
             "agents": agents,
+            "outcome_summary": outcome_summary,
         }
     )
 
