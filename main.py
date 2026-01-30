@@ -3,31 +3,30 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import uvicorn
 
+from db import get_client
+
 app = FastAPI(title="QoG Dashboard")
 templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    metrics = {
-        "ai_decisions": {"value": 847, "change": "+12%"},
-        "time_saved": {"value": "34 min", "change": "+8%"},
-        "quality_score": {"value": "78%", "change": "+5%"},
-    }
-    
-    value_areas = [
-        {"name": "Research & Analysis", "ai": 55, "human": 45, "warning": False},
-        {"name": "Content Drafting", "ai": 55, "human": 45, "warning": False},
-        {"name": "Strategic Planning", "ai": 50, "human": 50, "warning": True},
-    ]
+    client = get_client()
+    summary = client.get_dashboard_summary()
+    contribution_split = client.get_contribution_split()
+    decisions = client.get_decisions_with_outcomes(limit=20)
+    people = client.get_people_with_stats()
+    agents = client.get_agents_with_stats()
     
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
-            "metrics": metrics,
-            "value_areas": value_areas,
-            "member_count": 12,
+            "summary": summary,
+            "split": contribution_split,
+            "decisions": decisions,
+            "people": people,
+            "agents": agents,
         }
     )
 

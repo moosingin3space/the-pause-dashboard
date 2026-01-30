@@ -64,8 +64,174 @@ class Neo4jClient:
     def get_agents(self, limit: int = 100) -> list[dict[str, Any]]:
         return self.query("MATCH (a:Agent) RETURN a LIMIT $limit", {"limit": limit})
 
+    def get_people_with_stats(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self.query("""
+            MATCH (p:Person)
+            OPTIONAL MATCH (p)-[:CONTRIBUTED_TO]->(d:Decision)
+            WITH p, count(d) as decision_count
+            RETURN p.name as name, p.role as role, decision_count
+            ORDER BY decision_count DESC
+            LIMIT $limit
+        """, {"limit": limit})
+
+    def get_agents_with_stats(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self.query("""
+            MATCH (a:Agent)
+            OPTIONAL MATCH (a)-[:CONTRIBUTED_TO]->(d:Decision)
+            WITH a, count(d) as decision_count
+            RETURN a.name as name, a.type as type, decision_count
+            ORDER BY decision_count DESC
+            LIMIT $limit
+        """, {"limit": limit})
+
     def get_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         return self.query("MATCH (t:Task) RETURN t LIMIT $limit", {"limit": limit})
+
+    def get_decisions_by_influence(self, influence_type: str) -> int:
+        result = self.query(
+            "MATCH (d:Decision) WHERE d.ai_influence = $influenceType RETURN count(d) AS DecisionCount",
+            {"influenceType": influence_type}
+        )
+        return result[0]["DecisionCount"] if result else 0
+
+    def get_decision_influence_stats(self) -> dict[str, Any]:
+        high_count = self.get_decisions_by_influence("high")
+        low_count = self.get_decisions_by_influence("low")
+        total = high_count + low_count
+        return {
+            "high": high_count,
+            "low": low_count,
+            "total": total,
+            "high_rate": (high_count / total * 100) if total > 0 else 0,
+            "low_rate": (low_count / total * 100) if total > 0 else 0,
+        }
+
+    def get_dashboard_stats(self) -> dict[str, Any]:
+        result = self.query("""
+            MATCH (d:Decision)
+            WITH count(d) as total_decisions
+            
+            OPTIONAL MATCH (d2:Decision)-[:LED_TO]->(o:Outcome)
+            WHERE o.type = 'good'
+            WITH total_decisions, count(DISTINCT d2) as good_outcomes
+            
+            OPTIONAL MATCH (d3:Decision)-[:LED_TO]->(o2:Outcome)
+            WHERE o2.type = 'bad'
+            WITH total_decisions, good_outcomes, count(DISTINCT d3) as bad_outcomes
+            
+            OPTIONAL MATCH (d4:Decision)<-[:CONTRIBUTED_TO]-(p:Person)
+            WITH total_decisions, good_outcomes, bad_outcomes, count(DISTINCT d4) as human_decisions
+            
+            OPTIONAL MATCH (d5:Decision)<-[:CONTRIBUTED_TO]-(a:Agent)
+            RETURN total_decisions, good_outcomes, bad_outcomes, human_decisions, count(DISTINCT d5) as ai_decisions
+        """)
+        
+        if result:
+            r = result[0]
+            total = r["total_decisions"]
+            good = r["good_outcomes"]
+            bad = r["bad_outcomes"]
+            return {
+                "total_decisions": total,
+                "good_outcomes": good,
+                "bad_outcomes": bad,
+                "good_rate": (good / (good + bad) * 100) if (good + bad) > 0 else 0,
+                "bad_rate": (bad / (good + bad) * 100) if (good + bad) > 0 else 0,
+                "human_decisions": r["human_decisions"],
+                "ai_decisions": r["ai_decisions"],
+            }
+        
+        return {
+            "total_decisions": 0,
+            "good_outcomes": 0,
+            "bad_outcomes": 0,
+            "good_rate": 0,
+            "bad_rate": 0,
+            "human_decisions": 0,
+            "ai_decisions": 0,
+        }
+
+    def get_decisions_with_outcomes(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self.query("""
+            MATCH (d:Decision)-[:CONTRIBUTED_TO*1..2]->(x)<-[:CAUSED_BY]-(o:Outcome)
+            WHERE x:Task OR x:Event
+            OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
+            OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
+            WITH d, o, collect(DISTINCT p.name) as people, collect(DISTINCT a.name) as agents
+            RETURN d.name as decision, d.description as description,
+                   o.name as outcome, o.type as outcome_type,
+                   people, agents,
+                   CASE WHEN size(agents) > 0 THEN 'ai' 
+                        WHEN size(people) > 0 THEN 'human' 
+                        ELSE 'unknown' END as influence_type
+            LIMIT $limit
+        """, {"limit": limit})
+
+    def get_contribution_split(self) -> dict[str, Any]:
+        decision_result = self.query("""
+            MATCH (d:Decision)
+            OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
+            OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
+            WITH d,
+                 CASE WHEN a IS NOT NULL AND p IS NOT NULL THEN 'both'
+                      WHEN a IS NOT NULL THEN 'ai'
+                      WHEN p IS NOT NULL THEN 'human'
+                      ELSE 'none' END as contributor_type
+            RETURN contributor_type, count(DISTINCT d) as count
+        """)
+        
+        outcome_result = self.query("""
+            MATCH (o:Outcome)<-[:CAUSED_BY]-(x)<-[:CONTRIBUTED_TO*1..2]-(d:Decision)
+            WHERE x:Task OR x:Event
+            OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(d)
+            OPTIONAL MATCH (a:Agent)-[:PARTICIPATED_IN]->(d)
+            WITH o,
+                 CASE WHEN a IS NOT NULL AND p IS NOT NULL THEN 'both'
+                      WHEN a IS NOT NULL THEN 'ai'
+                      WHEN p IS NOT NULL THEN 'human'
+                      ELSE 'none' END as contributor_type
+            RETURN contributor_type, count(DISTINCT o) as count
+        """)
+        
+        decisions = {"human": 0, "ai": 0, "both": 0, "none": 0, "total": 0}
+        for row in decision_result:
+            decisions[row["contributor_type"]] = row["count"]
+            decisions["total"] += row["count"]
+        
+        outcomes = {"human": 0, "ai": 0, "both": 0, "none": 0, "total": 0}
+        for row in outcome_result:
+            outcomes[row["contributor_type"]] = row["count"]
+            outcomes["total"] += row["count"]
+        
+        def calc_rates(d):
+            total = d["total"] or 1
+            return {
+                **d,
+                "human_rate": (d["human"] + d["both"]) / total * 100,
+                "ai_rate": (d["ai"] + d["both"]) / total * 100,
+            }
+        
+        return {
+            "decisions": calc_rates(decisions),
+            "outcomes": calc_rates(outcomes),
+        }
+
+    def get_dashboard_summary(self) -> dict[str, Any]:
+        result = self.query("""
+            MATCH (d:Decision) WITH count(d) as total_decisions
+            MATCH (o:Outcome) WITH total_decisions, count(o) as total_outcomes
+            MATCH (p:Person) WITH total_decisions, total_outcomes, count(p) as total_people
+            MATCH (a:Agent) 
+            RETURN total_decisions, total_outcomes, total_people, count(a) as total_agents
+        """)
+        
+        t = result[0] if result else {}
+        return {
+            "total_decisions": t.get("total_decisions", 0),
+            "total_outcomes": t.get("total_outcomes", 0),
+            "total_people": t.get("total_people", 0),
+            "total_agents": t.get("total_agents", 0),
+        }
 
     def get_topology_stats(self) -> dict[str, int]:
         result = self.query("""
